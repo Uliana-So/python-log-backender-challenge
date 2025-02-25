@@ -44,6 +44,35 @@ services:
     volumes:
       - ./docker/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql
 
+  celery_worker:
+    build: .
+    container_name: celery_worker
+    command: celery -A core worker --loglevel=info
+    depends_on:
+      - redis
+      - app
+    env_file:
+      - ./src/core/.env
+    # user: "1000:1000"
+    # group_add:
+    #   - "1000"
+    restart: always
+    volumes:
+      - .:/srv/app
+
+  celery_beat:
+    build: .
+    container_name: celery_beat
+    command: celery -A core beat --scheduler django_celery_beat.schedulers:DatabaseScheduler --loglevel=info
+    depends_on:
+      - redis
+      - app
+      - celery_worker
+    env_file:
+      - ./src/core/.env
+    restart: always
+    volumes:
+      - .:/srv/app
 
 volumes:
   dev-db-data: {}
