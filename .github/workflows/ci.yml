@@ -1,0 +1,35 @@
+name: Django CI with Docker
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Create .env file
+      run: cp src/core/.env.ci src/core/.env
+
+    - name: Install & Start Services
+      run: docker compose up -d --build --wait
+
+    - name: Run Migrations
+      run: |
+        sleep 10
+        docker compose exec -T app python manage.py migrate
+
+    - name: Run Tests
+      run: docker compose exec -T app pytest --disable-warnings
+
+    - name: Stop Containers
+      run: docker compose down
