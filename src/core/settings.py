@@ -1,9 +1,11 @@
+import logging
 import os
 from pathlib import Path
 
 import environ
 import sentry_sdk
 import structlog
+from structlog_sentry import SentryProcessor
 
 env = environ.Env(
     DEBUG=(bool, False),
@@ -27,9 +29,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django_celery_results',
+    'django_celery_beat',
 
     # project apps
     'users',
+    'event_log',
 ]
 
 MIDDLEWARE = [
@@ -110,8 +115,15 @@ STATIC_ROOT = env("STATIC_ROOT")
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CELERY_BROKER = env("CELERY_BROKER", default="redis://localhost:6379/0")
+CELERY_BROKER = env("CELERY_BROKER", default="redis://redis:6379/0")
 CELERY_ALWAYS_EAGER = env("CELERY_ALWAYS_EAGER", default=DEBUG)
+CELERY_TIMEZONE = env("CELERY_TIMEZONE", default="Europe/Moscow")
+CELERY_ACCEPT_CONTENT = env("CELERY_ACCEPT_CONTENT", default=["json", "pickle"])
+CELERY_TASK_SERIALIZER = env("CELERY_TASK_SERIALIZER", default="json")
+CELERY_RESULT_SERIALIZER = env("CELERY_RESULT_SERIALIZER", default="json")
+CELERY_RESULT_BACKEND = 'django-db'
+
+BATCH_SIZE = env("BATCH_SIZE", default=100)
 
 LOG_FORMATTER = env("LOG_FORMATTER", default="console")
 LOG_LEVEL = env("LOG_LEVEL", default="INFO")
@@ -163,7 +175,8 @@ structlog.configure(
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
-        structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        SentryProcessor(level=logging.ERROR),
+        structlog.processors.JSONRenderer(),
     ],
     logger_factory=structlog.stdlib.LoggerFactory(),
     cache_logger_on_first_use=True,
@@ -181,6 +194,11 @@ if SENTRY_SETTINGS.get("dsn") and not DEBUG:
         integrations=[
             sentry_sdk.DjangoIntegration(),
             sentry_sdk.CeleryIntegration(),
+            sentry_sdk.LoggingIntegration(
+                level=logging.INFO,
+                event_level=logging.ERROR,
+            ),
         ],
+        traces_sample_rate=1.0,
         default_integrations=False,
     )
